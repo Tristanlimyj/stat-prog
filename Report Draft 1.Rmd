@@ -1,0 +1,477 @@
+---
+title: "Project Report Draft 1"
+group: Group 
+output: html_document
+---
+
+# **Table of Contents**
+
+**1. Summary**
+
+**2. Cleaning of Data**
+
+2.1 Renaming of Headers
+
+2.2 Creation of "Closing.Dur" Column
+
+2.3 Formatting of Variables to Numeric
+
+2.4 Removing of NA Values
+
+2.5 Cleaning of "Deal.Name" Column
+
+2.6 Formatting of "Stage.History" Column
+
+2.7 Viewing the Structure of "HHWT_Raw"
+
+**3. Descriptive Statistic of Variables**
+
+3.1 Summary Statistics
+
+3.1.1 Closed vs Lost Deals
+
+3.1.2 Deals Sent Out
+
+3.1.3 Year-On-Year Comparisons
+
+3.2 Key Accounts
+
+3.3 Salesperson Performance
+
+**4. Statistical Analysis of Variables**
+
+4.1 Deal close time (not sure what we need to put here)
+
+4.2 Average deal size (Amount) - Regression Model
+
+4.2.1 Data Explorer
+
+4.2.1.1 Missing Variables
+
+4.2.1.2 Continuous Variables
+
+4.2.1.3 Categorical Variables
+
+4.2.1.4 Correlation of Variables
+
+4.2.1.5 Data Explorer Report
+
+4.2.1 Data Partitioning
+
+4.2.3 Running Model
+
+4.2.4 Using lm() output
+
+4.2.5 Prediction on Test Set
+
+4.2.6 Subset Selection Algorithms
+
+4.2.6.1 Backward Elimination
+
+4.2.6.2 Forward Selection
+
+4.2.6.3 Stepwise Regression
+
+4.3 Probability of close - Classification Model
+
+4.4 Prediction of expected revenue (Expected Revenue)
+
+**5. Conclusion**
+
+------------------------------------------------------------------------
+
+# 1. Summary
+
+------------------------------------------------------------------------
+
+# 2. Cleaning of Data
+
+In this segment we will be cleaning the data given to us by HHWT, by renaming some columns, changing the formatting of some variables, and the removal of some values. We will also be taking a brief look into the structure of the data sat to see which areas require more cleaning.
+
+```{r Before Cleaning the Data, message=FALSE}
+#Loading of libraries that would be used in the cleaning of data
+library(dplyr)
+library(readr)
+library(stringr) 
+
+#Assign the HHWT excel file to "dataraw"
+dataraw <- read.csv("HHWT_X_SMU_X_All_Deals_090223_With_Stage_History_xlsx_Sheet0.csv")
+
+#Viewing the structure of "dataraw" 
+str(dataraw)
+```
+
+## 2.1 Renaming of Headers
+
+After converting the HHWT excel sheet into a .csv file, the header names on the file was changed. To make the analysis in further segments easier, the names of the headers was made shorter and easier to read.
+
+```{r Renaming of Headers}
+
+#Using the rename function to rename the headers with multiple "..." to give a tidier header.
+dataraw <- dataraw %>%
+  rename("Record.ID.Stage.History" = "Record.Id..Stage.History.",
+         "Stage.History" = "Stage..Stage.History.",
+         "Stage.Duration.Calendar.Days" = "Stage.Duration..Calendar.Days.",
+         "Probability" = "Probability....",
+         "Closed.Lost.Reason" = "Closed.Lost...Reason.Follow.up",
+         "Country.Target.Market" = "Country..Target.Market.") %>%
+  
+#Using the mutate function to change the columns "Account.Name" and "Deal.Name" characters to lowercase letters, so that analysis of these variables will be standardised
+   mutate(Account.Name = str_to_lower(Account.Name), Deal.Name = str_to_lower(Deal.Name))
+```
+
+------------------------------------------------------------------------
+
+## 2.2 Creation of "Closing.Dur" Column
+
+In order to find for the client the average time taken to close a deal, we will need to find the number of days it took from creating the deal to closing the deal. To achieve that, we will be using the as.Date function.
+
+```{r "Closing Duration" Column}
+
+#Take out the date only from "Created.Time" column
+dataraw2 <- dataraw %>% 
+  mutate(Created.Time = str_sub(Created.Time, 1, 10))
+
+#Formatting the Closing.Date, Created.Date and Closing.Dur as date
+dataraw3 <- dataraw2 %>%
+  mutate(Closing.Date = as.Date(Closing.Date, format('%d/%m/%Y'))) %>%
+  mutate(Created.Time = as.Date(Created.Time, format('%d/%m/%Y'))) %>%
+  #Creating a "Closing.Dur" column to represent the time taken to close the deal once opened
+  mutate(Closing.Dur = Closing.Date - Created.Time) %>% 
+  #Changing Closing.Dur to numeric
+  mutate(Closing.Dur = as.numeric(Closing.Dur)) 
+
+#Check if everything is numeric in Closing.Dur
+is.numeric(dataraw3$Closing.Dur)
+
+#To view the dataset
+dataraw3
+```
+
+------------------------------------------------------------------------
+
+## 2.3 Formatting of Variables to Numeric
+
+Some of the variables in the data set was given as characters, when they should have been viewed as numeric. Thus, in order to analyse the data, we will format "Amount" and "Expected.Revenue" from characters to numeric, by using gsub to extract the numeric value from string.
+
+```{r Formatting of Variables to Numeric}
+#Converting the characters in "Amount" and "Expected.Revenue" to numeric values
+dataraw4 <- dataraw3 %>%
+  mutate(Amount = as.numeric(gsub("[^0-9.]+", "", Amount))) %>%
+  mutate(Expected.Revenue = as.numeric(gsub("[^0-9.]+", "", Expected.Revenue)))
+
+#Check if everything is numeric in Closing.Dur
+is.numeric(dataraw4$Expected.Revenue)
+#Check if everything is numeric in Closing.Dur
+is.numeric(dataraw4$Amount)
+```
+
+------------------------------------------------------------------------
+
+## 2.4 Removing of NA Values
+
+Upon closer inspection of the data set, we observed that
+
+-   in the "Amount" column, there was some NA values, which we decided to remove. As replacing NA with a 0 value may skew the results of our findings, and also since the number of NA results is little compared to the overall number of results (\_%) removing these values should not affect the overall results
+
+-   in the "Closing.Date" column, there was NA values, which was removed as it affected the values of "Closing.Dur"
+
+-   in the "Closing.Dur" column, there was some negative values, which was removed as it is not possible to have a negative duration
+
+```{r Removing NA Values, echo=TRUE}
+
+#Count the number of NA in "Amount"
+dataraw4 %>%
+  count(is.na(Amount)) 
+
+#Count the number of NA in "Closing.Date"
+dataraw4 %>% 
+  count(is.na(Closing.Date))
+
+
+dataraw5 <- dataraw4 %>%
+  #Remove NA values in "Amount" and "Closing.Date" with filter
+  filter(!is.na(Amount)) %>% 
+  filter(!is.na(Closing.Date)) %>% 
+  #Remove Closing.Dur values that are -ve days
+  filter(Closing.Dur >= 0) 
+
+
+#Ensure there are no more NA in "Amount"
+dataraw5 %>%
+  count(is.na(Amount)) 
+
+#Ensure there are no more NA in "Closing.Date"
+dataraw5 %>% 
+  count(is.na(Closing.Date))
+
+#Ensure there are no negative numbers in "Closing.Dur"
+sum(dataraw5$Closing.Dur < 0)
+```
+
+------------------------------------------------------------------------
+
+## 2.5 Inspection of "Deal.Name" Column
+
+When first viewing the data set, there seemed to be multiple duplicates in the "Deal.Name" column.
+
+Upon inspection of the duplicated "Deal.Names", we note that the records are either for different "Accounts.Name" (i.e. different clients), or are created on different days (albeit for the same "Account.Name"). Therefore, we conclude that the records are not duplicates.
+
+```{r Inspection of "Deal.Name" Column}
+
+#Checking for duplicated in "Deal.Name"
+dataraw5 %>% 
+  #Count the number of occurrences of each "Deal.Name"
+  count(Deal.Name) %>% 
+  #Filter for rows with a count > 1
+  filter(n>1) %>%
+  #Count only the Deal.Name with 1 occurence
+  count(Deal.Name)
+
+```
+
+------------------------------------------------------------------------
+
+## 2.6 Formatting of "Stage.History" Column
+
+```{r Formatting the "Stage.History" Column}
+
+#To remove and append again at the end
+closedlostnotes <- dataraw5 %>%
+  select(Closed.Lost.Notes) 
+
+#To find the number of unique values in "Stage.History" 
+unique(dataraw5$Stage.History)
+
+#Format Stage.History to be consistent, for the results to be standardised
+HHWT_raw <- dataraw5 %>%
+  select(-Closed.Lost.Notes) %>%
+  mutate(Stage.History = str_replace(Stage.History, ".*Contacted.*", "10%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, ".*30.*", "30%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, ".*40.*", "40%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, ".*60.*", "60%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, ".*100.*", "100%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, ".*Indicated Interest.*", "30%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, "Parking Lot", "0%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, "Lost", "0%")) %>%
+  mutate(Stage.History = str_replace(Stage.History, "Needs Analysis", "0%"))%>%
+  mutate(Stage.History = str_replace(Stage.History, ".*Closed.*", "0%"))%>%
+  mutate(Stage.History = str_replace(Stage.History, ".*80.*", "80%")) %>%
+  bind_cols(closedlostnotes)
+
+#To check if there are any outlier unique values in "Stage.History"
+unique(HHWT_raw$Stage.History)
+```
+
+------------------------------------------------------------------------
+
+## 2.7 Viewing the Structure of "HHWT_Raw"
+
+```{r Structure of "HHWT_Raw", eval=FALSE, include=FALSE}
+str(HHWT_raw)
+```
+
+------------------------------------------------------------------------
+
+# **4. Statistical Analysis of Variables**
+
+------------------------------------------------------------------------
+
+## 4.1 Deal close time 
+
+------------------------------------------------------------------------
+
+## 4.2 Average deal size (Amount) - Regression Model
+
+### 4.2.1 Data Explorer
+
+Using DataExplorer, we will be checking the data to ensure it was cleaned properly before moving on to the regression model.
+
+#### 4.2.1.1 Missing Variables
+
+```{r Checking for Missing Variables}
+
+#Loading the library
+library(DataExplorer)
+
+#Exploring the dataset 
+HHWT_raw %>% introduce() 
+#Visualising HHWT
+HHWT_raw %>% plot_intro()
+```
+
+#### 4.2.1.2 Continuous Variables
+
+```{r Exploring Continuous Variables}
+
+#Selecting relevant continuous variables
+HHWT_con <- HHWT_raw %>%
+  select(Amount, Closing.Dur, Expected.Revenue, Probability, Sales.Cycle.Duration)
+
+#Visualising the continuous variables
+HHWT_con %>% plot_density() #looks sus
+HHWT_con %>% plot_histogram() #alot of outliers, we might want to check on these data
+#continuous data we want to clean better, might need to look at the outliers separately
+```
+
+#### 4.2.1.3 Categorical Variables
+
+```{r Exploring Categorical Variable}
+
+#Selecting relevant categorical variables
+HHWT_cat <- HHWT_raw %>%
+  select(Country.Company, New.Category, New.Subcat.1, Deal.Owner)
+
+HHWT_cat %>% plot_bar() 
+
+#need to clean Country.Company -> too many countries, maybe group some together
+#New.Category has some blanks in the data
+#New.Subcat 1 -> need to group sometogther
+#Deal.Owner -> maybe need clarify if some of the people still working there?
+```
+
+#### 4.2.1.4 Correlation of Variables
+
+```{r Exploring Correlation of Variables}
+
+#Select all necessary columns for correlation
+HHWT_corr <- HHWT_raw %>%
+  select(Amount, Closing.Dur, Expected.Revenue, Probability, Sales.Cycle.Duration, Country.Company, New.Category, New.Subcat.1, Deal.Owner)
+
+#Visualise the correlation between the variables
+HHWT_corr %>% plot_correlation()
+```
+
+#### 4.2.1.5 Data Explorer Report
+
+```{r Data Explorer Report, eval=FALSE}
+
+#Load the library
+library(explore)
+
+#Download the Explore report
+HHWT_corr %>% report(target = Amount, output_dir = "explore/", output_file = "EDA Explore 1.html")
+#run again after cleaning everything cuz it is a mess, but i not sure if needed
+```
+
+------------------------------------------------------------------------
+
+### 4.2.2 Preparing the Data to be used for Regression
+
+```{r}
+#OHE encoding of character columns 
+#Create categorical variables df
+chrvar.df <- HHWT_raw %>%
+  select(Country.Company, New.Category, New.Subcat.1, Deal.Owner) 
+
+library(caret)
+
+#Create dummy variables for the categorical variables
+chrvar.dummy <- dummyVars("~.", data= chrvar.df) 
+
+#Coerce into df
+chrvar.ohe <- data.frame(predict(chrvar.dummy, chrvar.df)) 
+
+```
+
+```{r}
+#Integer encoding of Stage.History  
+HHWT_raw.encd <- HHWT_raw %>%
+  mutate(Stage.History.Encd = as.numeric(factor(HHWT_raw$Stage.History, levels = c("0%", "10%", "30%", "40%", "60%", "80%", "100%")))) %>%
+  #bind cols from chrvar.ohe back to the original df
+  bind_cols(chrvar.ohe)
+```
+
+```{r}
+sel.var <- HHWT_raw.encd %>%
+  select(Amount, Closing.Dur, Expected.Revenue, Probability, Sales.Cycle.Duration, Country.Company, New.Category, New.Subcat.1, Deal.Owner) #i changed this part
+```
+
+------------------------------------------------------------------------
+
+### 4.2.3 Data Partitioning
+
+```{r}
+
+#For reproducability of randomly generated no.
+set.seed(1) 
+
+#80-20 train-test split
+train.index <- sample(nrow(HHWT_raw), 0.8*nrow(HHWT_raw)) 
+
+train.data <- sel.var[train.index, ]
+test.data <- sel.var[-train.index, ]
+```
+
+------------------------------------------------------------------------
+
+### 4.2.4 Running Model
+
+```{r}
+
+# Run lm()
+dealamt.lm <- lm(Amount ~ ., data = train.data)
+coef(dealamt.lm)
+```
+
+------------------------------------------------------------------------
+
+### 4.2.5 Using lm() output
+
+```{r}
+
+# Prediction of lm on TRAIN set 
+train.data.prediction <- predict(dealamt.lm, data = train.ml)
+
+# In-sample accuracy of our model VS train.data
+forecast::accuracy(train.data.prediction, train.ml$Amount)
+```
+
+------------------------------------------------------------------------
+
+### 4.2.6 Prediction on Test Set
+
+```{r}
+
+# Prediction of lm on TEST set 
+test.data.prediction <- predict(dealamt.lm, data = test.ml)
+
+# Actual, predicted, residual on first 20 deals
+residual.calc <- test.data$Amount[1:20] - test.data.prediction[1:20]
+deal.lm.results <- data.frame("Actual" = test.data$Amount[1:20],
+                              "Predicted" = test.data.prediction[1:20],
+                              "Residual" = residual.calc)
+
+deal.lm.results
+
+# Test set accuracy
+forecast::accuracy(test.data.prediction, test.ml$Amount)
+
+# Comparison 
+accuracy.in <- data.frame(forecast::accuracy(train.data.prediction, train.ml$Amount))
+accuracy.out <- data.frame(forecast::accuracy(test.data.prediction, test.ml$Amount))
+
+accuracy.diff <- bind_rows(accuracy.in, accuracy.out)
+
+rownames(accuracy.diff) <- c("In-sample", "Out-of-sample") #rename row names in comparison table
+
+accuracy.diff
+```
+
+------------------------------------------------------------------------
+
+### 4.2.7 Subset Selection Algorithms
+
+#### 4.2.7.1 Backward Elimination
+
+#### 4.2.7.2 Forward Selection
+
+#### 4.2.7.3 Stepwise Regression
+
+------------------------------------------------------------------------
+
+## 4.3 Probability of close - Classification Model
+
+------------------------------------------------------------------------
+
+## 4.4 Prediction of expected revenue (Expected Revenue)
